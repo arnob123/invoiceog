@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>invoiceog - Modern Invoice Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .invoice-preview { box-shadow: 0 0 15px rgba(0,0,0,0.1); }
+        .logo-text { font-family: 'Poppins', sans-serif; }
+        .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 28px; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #000; }
+        input:checked + .slider:before { transform: translateX(22px); }
+        
+        @media print {
+            body * { visibility: hidden; }
+            #invoice-preview, #invoice-preview * { visibility: visible; }
+            #invoice-preview { position: absolute; left: 0; top: 0; width: 100%; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <header class="text-center mb-12">
+            <div class="flex justify-center items-center gap-3">
+                <svg width="44" height="44" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="40" width="30" height="20" transform="rotate(-45 10,40)" fill="#3B82F6"/><rect x="40" y="40" width="30" height="20" transform="rotate(-45 40,40)" fill="#2563EB"/></svg>
+                <h1 class="text-4xl font-semibold text-gray-900 lowercase logo-text">invoiceog</h1>
+            </div>
+            <p class="text-gray-500 mt-2">A simple, measured, and reliable invoicing tool.</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div class="bg-white p-6 rounded-lg border border-gray-200 space-y-6">
+                
+                <div>
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-semibold">Saved Invoices</h2>
+                        <button id="new-invoice-btn" class="px-3 py-1 bg-gray-200 text-gray-800 text-sm font-semibold rounded-md hover:bg-gray-300">New Invoice</button>
+                    </div>
+                    <div id="saved-invoices-list" class="space-y-2 max-h-48 overflow-y-auto border rounded-md p-2 bg-gray-50"></div>
+                </div>
+
+                <div>
+                  <h2 class="text-2xl font-semibold mb-4 border-t pt-4">Invoice Details</h2>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                      <div>
+                          <h3 class="font-semibold text-lg mb-2">From</h3>
+                          <input id="from_name" type="text" placeholder="Your Company Name" class="w-full p-2 border rounded-md bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black">
+                          <textarea id="from_address" placeholder="Your Address" class="w-full p-2 border rounded-md mt-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black" rows="3"></textarea>
+                      </div>
+                      <div>
+                          <h3 class="font-semibold text-lg mb-2">To</h3>
+                          <input id="to_name" type="text" placeholder="Client's Name" class="w-full p-2 border rounded-md bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black">
+                          <textarea id="to_address" placeholder="Client's Address" class="w-full p-2 border rounded-md mt-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black" rows="3"></textarea>
+                      </div>
+                  </div>
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div><label for="invoice_number" class="block text-sm font-medium text-gray-700">Invoice #</label><input type="text" id="invoice_number" value="INV-001" class="w-full mt-1 p-2 border rounded-md bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black"></div>
+                      <div><label for="invoice_date" class="block text-sm font-medium text-gray-700">Date</label><input type="date" id="invoice_date" class="w-full mt-1 p-2 border rounded-md bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black"></div>
+                      <div><label for="due_date" class="block text-sm font-medium text-gray-700">Due Date</label><input type="date" id="due_date" class="w-full mt-1 p-2 border rounded-md bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black"></div>
+                  </div>
+                </div>
+
+                <div>
+                    <h3 class="font-semibold text-lg mb-3 mt-4 border-t pt-4">Line Items</h3>
+                    <div id="line-items-container"></div>
+                    <button id="add-item-btn" class="mt-2 px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 transition-colors flex items-center gap-2 text-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
+                        Add Item
+                    </button>
+                </div>
+
+                <div>
+                    <h2 class="text-2xl font-semibold mb-4 border-b pb-3">Settings</h2>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="block text-sm font-medium text-gray-700">Tax (%)</label><input type="number" id="tax_rate" value="10" min="0" max="100" class="w-full mt-1 p-2 border rounded-md bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black"></div>
+                        <div><label class="block text-sm font-medium text-gray-700">Currency</label><select id="currency-select" class="w-full mt-1 p-2 border rounded-md bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black"><option value="BDT">Bangladeshi Taka (BDT - 050)</option><option value="USD">$ US Dollar (USD)</option></select></div>
+                    </div>
+                    <div class="grid grid-cols-1 gap-4 mt-4">
+                        <div class="flex items-center justify-between"><span class="font-medium text-gray-700">Use Bangla Numerals</span><label class="switch"><input type="checkbox" id="bangla-numerals-toggle"><span class="slider"></span></label></div>
+                    </div>
+                </div>
+
+                <div>
+                    <h2 class="text-2xl font-semibold mb-4 border-b pb-3">Send Invoice</h2>
+                    <div class="space-y-4">
+                        <div><label for="recipient_email" class="block text-sm font-medium text-gray-700">Recipient Email</label><input type="email" id="recipient_email" placeholder="client@example.com" class="w-full mt-1 p-2 border rounded-md bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black"></div>
+                        <div><label for="email_message" class="block text-sm font-medium text-gray-700">Message</label><textarea id="email_message" placeholder="Enter a message to the client..." class="w-full p-2 border rounded-md mt-1 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black" rows="3"></textarea></div>
+                    </div>
+                </div>
+                
+                <div class="flex flex-wrap gap-4 pt-4 border-t">
+                    <button id="save-invoice-btn" class="flex-1 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all duration-300">Save Invoice</button>
+                    <button id="download-pdf-btn" class="flex-1 px-6 py-3 bg-gray-800 text-white font-semibold rounded-lg hover:bg-black transition-all duration-300">Download PDF</button>
+                    <button id="send-email-btn" class="flex-1 px-6 py-3 bg-black text-white font-semibold rounded-lg hover:bg-gray-800 transition-all duration-300 transform hover:scale-105">
+                        <span id="send-email-text">Send PDF via Email</span><span id="send-email-loader" class="hidden">Sending...</span>
+                    </button>
+                </div>
+                <div id="email-status" class="text-center mt-2 text-sm"></div>
+            </div>
+
+            <div id="invoice-wrapper" class="bg-gray-100 p-4 rounded-lg">
+                <div id="invoice-preview" class="bg-white p-8 md:p-12 rounded-lg border border-gray-200 invoice-preview w-full">
+                    <header class="flex justify-between items-start pb-6 border-b">
+                        <div>
+                            <div class="flex items-center gap-3"><svg width="32" height="32" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="40" width="30" height="20" transform="rotate(-45 10,40)" fill="#3B82F6"/><rect x="40" y="40" width="30" height="20" transform="rotate(-45 40,40)" fill="#2563EB"/></svg><span class="font-bold text-2xl logo-text lowercase" id="preview_from_name">Your Company</span></div>
+                            <div id="preview_from_address" class="text-gray-600 mt-2 text-sm whitespace-pre-line">Your Address</div>
+                        </div>
+                        <div class="text-right">
+                            <h1 class="text-4xl font-bold uppercase text-black">Invoice</h1>
+                            <div class="mt-2 text-gray-600"><span class="font-semibold">Invoice #:</span> <span id="preview_invoice_number">INV-001</span></div>
+                        </div>
+                    </header>
+                    <section class="grid grid-cols-2 gap-8 my-8">
+                        <div><h4 class="font-semibold text-gray-500 mb-2">Bill To:</h4><p class="font-bold text-lg" id="preview_to_name">Client Name</p><p id="preview_to_address" class="text-gray-600 text-sm whitespace-pre-line">Client Address</p></div>
+                        <div class="text-right">
+                             <div class="mb-2"><span class="font-semibold text-gray-500">Invoice Date:</span><span id="preview_invoice_date"></span></div>
+                             <div><span class="font-semibold text-gray-500">Due Date:</span><span id="preview_due_date"></span></div>
+                        </div>
+                    </section>
+                    <section>
+                        <table class="w-full text-left">
+                            <thead><tr class="bg-black text-white"><th class="p-3 font-semibold">Description</th><th class="p-3 font-semibold text-right">Quantity</th><th class="p-3 font-semibold text-right">Unit Price</th><th class="p-3 font-semibold text-right">Total</th></tr></thead>
+                            <tbody id="preview_line_items"></tbody>
+                        </table>
+                    </section>
+                    <section class="mt-8 flex justify-end">
+                        <div class="w-full max-w-xs text-gray-700">
+                            <div class="flex justify-between py-2"><span>Subtotal</span><span id="preview_subtotal">BDT 0.00</span></div>
+                             <div class="flex justify-between py-2"><span>Tax (<span id="preview_tax_rate">10</span>%)</span><span id="preview_tax">BDT 0.00</span></div>
+                            <div class="flex justify-between py-3 border-t-2 border-black mt-2"><span class="font-bold text-lg text-black">Total</span><span class="font-bold text-lg text-black" id="preview_total">BDT 0.00</span></div>
+                        </div>
+                    </section>
+                    <footer class="text-center text-gray-400 text-xs pt-8 mt-8 border-t"><p>Thank you for your business!</p></footer>
+                </div>
+            </div>
+        </main>
+        
+        <footer class="text-center mt-12 text-gray-500 text-sm">Created by Arnobrazz</footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            let state = { currencySymbol: 'BDT ', currency: 'BDT', useBanglaNumerals: false };
+            const EMAILJS_SERVICE_ID = 'YOUR_SERVICE_ID', EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID', EMAILJS_PUBLIC_KEY = 'YOUR_PUBLIC_KEY';
+            
+            // --- DOM ELEMENT REFERENCES ---
+            const fromNameInput = document.getElementById('from_name'), toNameInput = document.getElementById('to_name');
+            const fromAddressInput = document.getElementById('from_address'), toAddressInput = document.getElementById('to_address');
+            const invoiceNumberInput = document.getElementById('invoice_number'), invoiceDateInput = document.getElementById('invoice_date'), dueDateInput = document.getElementById('due_date');
+            const addItemBtn = document.getElementById('add-item-btn'), lineItemsContainer = document.getElementById('line-items-container');
+            const taxRateInput = document.getElementById('tax_rate');
+            const recipientEmailInput = document.getElementById('recipient_email'), emailMessageTextarea = document.getElementById('email_message');
+            const downloadPdfBtn = document.getElementById('download-pdf-btn'), sendEmailBtn = document.getElementById('send-email-btn');
+            const emailStatus = document.getElementById('email-status'), sendEmailText = document.getElementById('send-email-text'), sendEmailLoader = document.getElementById('send-email-loader');
+            const saveInvoiceBtn = document.getElementById('save-invoice-btn'), newInvoiceBtn = document.getElementById('new-invoice-btn');
+            const savedInvoicesList = document.getElementById('saved-invoices-list');
+            const banglaNumeralsToggle = document.getElementById('bangla-numerals-toggle');
+            const currencySelect = document.getElementById('currency-select');
+            
+            const previewFromName = document.getElementById('preview_from_name'), previewFromAddress = document.getElementById('preview_from_address');
+            const previewToName = document.getElementById('preview_to_name'), previewToAddress = document.getElementById('preview_to_address');
+            const previewInvoiceNumber = document.getElementById('preview_invoice_number'), previewInvoiceDate = document.getElementById('preview_invoice_date'), previewDueDate = document.getElementById('preview_due_date');
+            const previewLineItems = document.getElementById('preview_line_items');
+            const previewSubtotal = document.getElementById('preview_subtotal'), previewTax = document.getElementById('preview_tax'), previewTotal = document.getElementById('preview_total');
+            const previewTaxRate = document.getElementById('preview_tax_rate');
+
+            // --- UTILITY FUNCTIONS ---
+            const banglaNumerals = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+            const toBangla = (numStr) => state.useBanglaNumerals ? String(numStr).split('').map(char => banglaNumerals[char] || char).join('') : String(numStr);
+            const formatCurrency = (amount) => `${state.currencySymbol}${toBangla(amount.toFixed(2))}`;
+            const formatDate = (dateStr) => !dateStr ? '' : toBangla(new Date(dateStr).toLocaleDateString('en-GB'));
+            
+            // --- CORE FUNCTIONS ---
+            function createLineItem(item = { description: '', quantity: 1, price: 0.00 }) {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'grid grid-cols-12 gap-2 mb-2 item-row';
+                itemDiv.innerHTML = `<input type="text" placeholder="Item Description" class="col-span-5 p-2 border rounded-md bg-gray-50 item-description" value="${item.description}"><input type="number" placeholder="1" value="${item.quantity}" min="1" class="col-span-2 p-2 border rounded-md bg-gray-50 text-right item-quantity"><input type="number" placeholder="0.00" value="${item.price}" step="0.01" min="0" class="col-span-2 p-2 border rounded-md bg-gray-50 text-right item-price"><div class="col-span-2 flex items-center justify-end text-gray-700 item-total pr-2">BDT 0.00</div><button class="col-span-1 text-red-500 hover:text-red-700 remove-item-btn flex items-center justify-center">Remove</button>`;
+                lineItemsContainer.appendChild(itemDiv);
+            }
+
+            function updateAll() {
+                // Update header/to/from details in preview
+                previewFromName.textContent = fromNameInput.value || 'Your Company';
+                previewFromAddress.textContent = fromAddressInput.value || 'Your Address';
+                previewToName.textContent = toNameInput.value || 'Client Name';
+                previewToAddress.textContent = toAddressInput.value || 'Client Address';
+                previewInvoiceNumber.textContent = toBangla(invoiceNumberInput.value) || toBangla('INV-001');
+                previewInvoiceDate.textContent = formatDate(invoiceDateInput.value);
+                previewDueDate.textContent = formatDate(dueDateInput.value);
+
+                // Update line items and calculate subtotal
+                let subtotal = 0;
+                previewLineItems.innerHTML = '';
+                lineItemsContainer.querySelectorAll('.item-row').forEach(row => {
+                    const desc = row.querySelector('.item-description').value, qty = parseFloat(row.querySelector('.item-quantity').value) || 0, price = parseFloat(row.querySelector('.item-price').value) || 0;
+                    const total = qty * price;
+                    subtotal += total;
+                    row.querySelector('.item-total').textContent = formatCurrency(total);
+                    
+                    const previewRow = document.createElement('tr');
+                    previewRow.className = 'border-b';
+                    previewRow.innerHTML = `<td class="py-2 px-3">${desc || 'Item Description'}</td><td class="py-2 px-3 text-right">${toBangla(qty)}</td><td class="py-2 px-3 text-right">${formatCurrency(price)}</td><td class="py-2 px-3 text-right">${formatCurrency(total)}</td>`;
+                    previewLineItems.appendChild(previewRow);
+                });
+
+                // Calculate tax and total
+                const taxRate = parseFloat(taxRateInput.value) || 0;
+                const tax = subtotal * (taxRate / 100);
+                const total = subtotal + tax;
+                previewTaxRate.textContent = toBangla(taxRate);
+                previewSubtotal.textContent = formatCurrency(subtotal);
+                previewTax.textContent = formatCurrency(tax);
+                previewTotal.textContent = formatCurrency(total);
+            }
+            
+            // --- ✅ FIXED: PDF & EMAIL FUNCTIONS ---
+            async function createPdfObject() {
+                const { jsPDF } = window.jspdf;
+                const invoiceElement = document.getElementById('invoice-preview');
+                const canvas = await html2canvas(invoiceElement, { scale: 2, useCORS: true });
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = pdf.internal.pageSize.getHeight();
+                const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+                let heightLeft = imgHeight;
+                let position = 0;
+
+                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+                heightLeft -= pdfHeight;
+
+                while (heightLeft > 0) {
+                    position -= pdfHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+                    heightLeft -= pdfHeight;
+                }
+                return pdf;
+            }
+
+            async function downloadPdf() {
+                const pdf = await createPdfObject();
+                pdf.save(`Invoice-${invoiceNumberInput.value || 'invoice'}.pdf`);
+            }
+            
+            async function sendEmail() {
+                if (!recipientEmailInput.value) { emailStatus.textContent = 'Recipient email is required.'; return; }
+                if (EMAILJS_SERVICE_ID === 'YOUR_SERVICE_ID') { alert('EmailJS is not configured in the script.'); return; }
+                
+                sendEmailText.classList.add('hidden'); sendEmailLoader.classList.remove('hidden'); sendEmailBtn.disabled = true;
+                emailStatus.textContent = 'Generating PDF and sending...';
+                
+                try {
+                    const pdf = await createPdfObject();
+                    const pdfData = pdf.output('datauristring').substring(pdf.output('datauristring').indexOf(',') + 1);
+                    const templateParams = {
+                        to_email: recipientEmailInput.value,
+                        from_name: fromNameInput.value || "Your Company",
+                        to_name: toNameInput.value || "Valued Client",
+                        invoice_number: invoiceNumberInput.value,
+                        message: emailMessageTextarea.value,
+                        pdf_attachment: pdfData
+                    };
+                    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams, EMAILJS_PUBLIC_KEY);
+                    emailStatus.textContent = 'Email sent successfully!';
+                } catch (error) { 
+                    emailStatus.textContent = `Failed to send email: ${error.text || 'Unknown error'}`;
+                } finally { 
+                    sendEmailText.classList.remove('hidden'); sendEmailLoader.classList.add('hidden'); sendEmailBtn.disabled = false;
+                }
+            }
+
+            // --- LOCAL STORAGE FUNCTIONS ---
+            function saveInvoice() {
+                const lineItems = [];
+                lineItemsContainer.querySelectorAll('.item-row').forEach(row => {
+                    const description = row.querySelector('.item-description').value;
+                    const quantity = parseFloat(row.querySelector('.item-quantity').value) || 0;
+                    const price = parseFloat(row.querySelector('.item-price').value) || 0;
+                    if (description || quantity || price) {
+                        lineItems.push({ description, quantity, price });
+                    }
+                });
+
+                const invoiceData = {
+                    id: invoiceNumberInput.value || `INV-${Date.now()}`,
+                    fromName: fromNameInput.value,
+                    fromAddress: fromAddressInput.value,
+                    toName: toNameInput.value,
+                    toAddress: toAddressInput.value,
+                    invoiceNumber: invoiceNumberInput.value,
+                    invoiceDate: invoiceDateInput.value,
+                    dueDate: dueDateInput.value,
+                    lineItems: lineItems,
+                    taxRate: parseFloat(taxRateInput.value) || 0,
+                    currency: state.currency,
+                    currencySymbol: state.currencySymbol,
+                    recipientEmail: recipientEmailInput.value,
+                    emailMessage: emailMessageTextarea.value,
+                    savedAt: new Date().toISOString()
+                };
+
+                const savedInvoices = JSON.parse(localStorage.getItem('invoiceog_saved')) || [];
+                const existingIndex = savedInvoices.findIndex(inv => inv.id === invoiceData.id);
+                
+                if (existingIndex >= 0) {
+                    savedInvoices[existingIndex] = invoiceData;
+                } else {
+                    savedInvoices.push(invoiceData);
+                }
+
+                localStorage.setItem('invoiceog_saved', JSON.stringify(savedInvoices));
+                renderSavedInvoices();
+                
+                // Show success message
+                const originalText = saveInvoiceBtn.textContent;
+                saveInvoiceBtn.textContent = 'Saved!';
+                saveInvoiceBtn.style.backgroundColor = '#10b981';
+                setTimeout(() => {
+                    saveInvoiceBtn.textContent = originalText;
+                    saveInvoiceBtn.style.backgroundColor = '';
+                }, 2000);
+            }
+
+            function renderSavedInvoices() {
+                const savedInvoices = JSON.parse(localStorage.getItem('invoiceog_saved')) || [];
+                savedInvoicesList.innerHTML = '';
+
+                if (savedInvoices.length === 0) {
+                    savedInvoicesList.innerHTML = '<p class="text-gray-500 text-sm">No saved invoices yet.</p>';
+                    return;
+                }
+
+                savedInvoices.reverse().forEach(invoice => {
+                    const invoiceItem = document.createElement('div');
+                    invoiceItem.className = 'flex justify-between items-center p-2 bg-white border rounded hover:bg-gray-50 cursor-pointer';
+                    invoiceItem.innerHTML = `
+                        <div class="flex-1" onclick="loadInvoice('${invoice.id}')">
+                            <div class="font-medium text-sm">${invoice.id}</div>
+                            <div class="text-xs text-gray-500">${invoice.toName || 'No client'} • ${new Date(invoice.savedAt).toLocaleDateString()}</div>
+                        </div>
+                        <button class="delete-invoice-btn text-red-500 hover:text-red-700 text-sm px-2" data-id="${invoice.id}">×</button>
+                    `;
+                    savedInvoicesList.appendChild(invoiceItem);
+                });
+            }
+
+            function loadInvoice(invoiceId) {
+                const savedInvoices = JSON.parse(localStorage.getItem('invoiceog_saved')) || [];
+                const invoice = savedInvoices.find(inv => inv.id === invoiceId);
+                
+                if (!invoice) return;
+
+                // Load basic details
+                fromNameInput.value = invoice.fromName || '';
+                fromAddressInput.value = invoice.fromAddress || '';
+                toNameInput.value = invoice.toName || '';
+                toAddressInput.value = invoice.toAddress || '';
+                invoiceNumberInput.value = invoice.invoiceNumber || '';
+                invoiceDateInput.value = invoice.invoiceDate || '';
+                dueDateInput.value = invoice.dueDate || '';
+                taxRateInput.value = invoice.taxRate || 10;
+                recipientEmailInput.value = invoice.recipientEmail || '';
+                emailMessageTextarea.value = invoice.emailMessage || '';
+
+                // Load currency settings
+                if (invoice.currency) {
+                    state.currency = invoice.currency;
+                    state.currencySymbol = invoice.currencySymbol || (invoice.currency === 'USD' ? '$' : 'BDT ');
+                    currencySelect.value = invoice.currency;
+                }
+
+                // Clear existing line items
+                lineItemsContainer.innerHTML = '';
+
+                // Load line items
+                if (invoice.lineItems && invoice.lineItems.length > 0) {
+                    invoice.lineItems.forEach(item => {
+                        createLineItem(item);
+                    });
+                } else {
+                    createLineItem();
+                }
+
+                updateAll();
+            }
+
+            function deleteInvoice(invoiceId) {
+                const savedInvoices = JSON.parse(localStorage.getItem('invoiceog_saved')) || [];
+                const filteredInvoices = savedInvoices.filter(inv => inv.id !== invoiceId);
+                localStorage.setItem('invoiceog_saved', JSON.stringify(filteredInvoices));
+                renderSavedInvoices();
+            }
+
+            function clearForm() {
+                fromNameInput.value = '';
+                fromAddressInput.value = '';
+                toNameInput.value = '';
+                toAddressInput.value = '';
+                invoiceNumberInput.value = `INV-${String(Date.now()).slice(-4)}`;
+                invoiceDateInput.value = '';
+                dueDateInput.value = '';
+                taxRateInput.value = '10';
+                recipientEmailInput.value = '';
+                emailMessageTextarea.value = '';
+                lineItemsContainer.innerHTML = '';
+                createLineItem();
+                updateAll();
+            }
+
+            function initializeDates() {
+                const today = new Date();
+                const nextWeek = new Date(today);
+                nextWeek.setDate(today.getDate() + 7);
+                
+                if (!invoiceDateInput.value) {
+                    invoiceDateInput.value = today.toISOString().split('T')[0];
+                }
+                if (!dueDateInput.value) {
+                    dueDateInput.value = nextWeek.toISOString().split('T')[0];
+                }
+            }
+            
+            // --- EVENT LISTENERS ---
+            document.body.addEventListener('input', updateAll);
+            addItemBtn.addEventListener('click', () => { createLineItem(); updateAll(); });
+            downloadPdfBtn.addEventListener('click', downloadPdf);
+            sendEmailBtn.addEventListener('click', sendEmail);
+            banglaNumeralsToggle.addEventListener('change', (e) => { state.useBanglaNumerals = e.target.checked; updateAll(); });
+            currencySelect.addEventListener('change', (e) => { 
+                state.currency = e.target.value; 
+                state.currencySymbol = e.target.value === 'USD' ? '$' : 'BDT '; 
+                updateAll(); 
+            });
+            lineItemsContainer.addEventListener('click', (e) => { if (e.target.closest('.remove-item-btn')) { e.target.closest('.item-row').remove(); updateAll(); } });
+            
+            saveInvoiceBtn.addEventListener('click', saveInvoice);
+            newInvoiceBtn.addEventListener('click', clearForm);
+            savedInvoicesList.addEventListener('click', (e) => {
+                if (e.target.classList.contains('delete-invoice-btn')) {
+                    const id = e.target.getAttribute('data-id');
+                    if (confirm(`Are you sure you want to delete Invoice ${id}?`)) deleteInvoice(id);
+                }
+            });
+
+            function initialize() {
+                initializeDates();
+                renderSavedInvoices();
+                const invoices = JSON.parse(localStorage.getItem('invoiceog_saved')) || [];
+                if (invoices.length > 0) {
+                    loadInvoice(invoices[invoices.length - 1].id); // Load the last saved invoice
+                } else {
+                    invoiceNumberInput.value = `INV-${String(Date.now()).slice(-4)}`;
+                    createLineItem();
+                    updateAll();
+                }
+            }
+
+            initialize();
+        });
+    </script>
+</body>
+</html>
